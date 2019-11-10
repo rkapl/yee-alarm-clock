@@ -64,19 +64,15 @@ def blink():
     #bulb.set_scene(yeelight.SceneClass.CT, 6500, 1)
     time.sleep(1)
 
-cparse = argparse.ArgumentParser(
-    prog = 'yeelight-alarm-clock',
-    description = 'Turn on yeelight at certain time, like an alarm clock')
-cparse.add_argument('time', help = 'time to turn on the clock', type = parse_time)
-cargs = cparse.parse_args()
+blink_transitions = [
+    yeelight.TemperatureTransition(duration=50, brightness=100, degrees=6700),
+    yeelight.SleepTransition(duration=1000),
+    yeelight.TemperatureTransition(duration=50, brightness=0, degrees=6700),
+    yeelight.SleepTransition(duration=1000),
+]
+blink_flow = yeelight.Flow(2, yeelight.Flow.actions.off, blink_transitions)
 
-alarm = get_next_time(cargs.time)
-
-bulb = yeelight.Bulb(ip)
-#print(bulb.get_properties())
-bulb.turn_off()
-
-transitions = [
+alarm_transitions = [
     yeelight.TemperatureTransition(duration=50, brightness=100, degrees=6700),
     yeelight.SleepTransition(duration=8000),
     yeelight.TemperatureTransition(duration=50, brightness=0, degrees=1700),
@@ -87,17 +83,43 @@ transitions = [
     yeelight.TemperatureTransition(duration=50, brightness=0, degrees=1700),
     yeelight.SleepTransition(duration=700),
 ]
-flow = yeelight.Flow(0, yeelight.Flow.actions.off, transitions)
+alarm_flow = yeelight.Flow(0, yeelight.Flow.actions.off, alarm_transitions)
 
-wait_until(alarm)
-print('Alarm on')
-try:
-    d = 5
-    bulb.effect = 'sudden'
+def disconnect_bulb(bulb):
+    if bulb._Bulb__socket:
+        bulb._Bulb__socket.close()
+        bulb._Bulb__socket = None
+
+def main():
+    global bulb, alarm
+    cparse = argparse.ArgumentParser(
+        prog = 'yeelight-alarm-clock',
+        description = 'Turn on yeelight at certain time, like an alarm clock')
+    cparse.add_argument('time', help = 'time to turn on the clock', type = parse_time)
+    cargs = cparse.parse_args()
+
+    alarm = get_next_time(cargs.time)
+
+    bulb = yeelight.Bulb(ip)
     bulb.turn_on()
-    bulb.start_flow(flow)
-    while True:
-        time.sleep(100)
-except KeyboardInterrupt:
-    bulb.turn_off()
-    print('Alarm off')
+    #print(bulb.get_properties())
+    bulb.start_flow(blink_flow)
+    time.sleep(5)
+
+    # Bulb will reconnect on next command, we do not want to maintain the socket the whole night
+    disconnect_bulb(bulb)
+
+    wait_until(alarm)
+    print('Alarm on')
+    try:
+        d = 5
+        bulb.effect = 'sudden'
+        bulb.turn_on()
+        bulb.start_flow(alarm_flow)
+        while True:
+            time.sleep(100)
+    except KeyboardInterrupt:
+        bulb.turn_off()
+        print('Alarm off')
+
+main()
